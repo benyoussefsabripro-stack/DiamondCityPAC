@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Diamond City RP - The Heist</title>
+    <style>
+        /* --- AMBIANCE GTA RP / DIAMOND CITY --- */
+        body {
+            background-color: #050510; /* Nuit profonde */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* Titre Néon */
+        h1 {
+            font-size: 2.5rem;
+            margin: 10px 0;
+            color: #00ffff; /* Cyan Diamond */
+            text-shadow: 0 0 10px #00ffff, 0 0 20px #0000ff;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            font-style: italic;
+        }
+
+        .hud {
+            display: flex;
+            gap: 30px;
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .dirty-money { color: #2ecc71; text-shadow: 0 0 5px #2ecc71; }
+        .wanted-level { color: #ff3333; text-shadow: 0 0 5px red; }
+
+        /* Le conteneur du jeu */
+        .game-wrapper {
+            border: 4px solid #333;
+            border-radius: 5px;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.1);
+        }
+
+        /* LA VILLE (GRILLE) */
+        .grid {
+            display: flex;
+            flex-wrap: wrap;
+            width: 560px;
+            height: 560px;
+            background-color: #1a1a1a; /* Asphalte */
+        }
+
+        .grid div {
+            width: 20px;
+            height: 20px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* --- ÉLÉMENTS DE JEU --- */
+
+        /* Immeubles (Murs) */
+        .wall {
+            background-color: #0d0d15;
+            border: 1px solid #00ffff; /* Bordure Cyan Diamond City */
+            box-shadow: inset 0 0 5px #0000ff;
+            opacity: 0.8;
+        }
+
+        /* Argent Sale (Points) */
+        .money-bag {
+            font-size: 10px;
+        }
+        .money-bag::after {
+            content: '$';
+            color: #2ecc71;
+            font-weight: bold;
+        }
+
+        /* Diamant (Power Pellet) */
+        .diamond-power {
+            font-size: 14px;
+        }
+        .diamond-power::after {
+            content: '💎';
+            filter: drop-shadow(0 0 5px cyan);
+            animation: spin 1s infinite linear;
+        }
+        @keyframes spin { 0% {transform: rotate(0deg) scale(1);} 50% {transform: rotate(180deg) scale(1.3);} 100% {transform: rotate(360deg) scale(1);} }
+
+        /* --- ACTEURS --- */
+
+        /* Joueur (Voiture de sport) */
+        .player {
+            font-size: 16px;
+            z-index: 10;
+        }
+        .player::after {
+            content: '🏎️'; /* Voiture de course */
+            filter: drop-shadow(0 0 5px yellow);
+        }
+        /* Orientation voiture */
+        .player.left { transform: scaleX(-1); }
+        .player.up { transform: rotate(-90deg); }
+        .player.down { transform: rotate(90deg); }
+
+        /* Police (Fantômes) */
+        .cop {
+            font-size: 16px;
+            z-index: 9;
+            transition: all 0.2s;
+        }
+        .cop::after {
+            content: '🚓';
+        }
+
+        /* Couleurs des unités de police */
+        .unit-1::after { filter: drop-shadow(0 0 2px blue); } /* LSPD */
+        .unit-2::after { filter: drop-shadow(0 0 2px red); }  /* Sheriff */
+        .unit-3::after { filter: hue-rotate(90deg); }         /* FIB */
+        .unit-4::after { filter: grayscale(100%); }           /* NOOSE */
+
+        /* Police apeurée (Mode panique) */
+        .scared-cop::after {
+            content: '💥'; /* Explosion / Accident */
+            animation: blink 0.2s infinite;
+        }
+        @keyframes blink { from {opacity:1;} to {opacity:0.5;} }
+
+        /* Game Over Screen */
+        #message-box {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            border: 2px solid red;
+            padding: 20px;
+            text-align: center;
+            display: none;
+            z-index: 100;
+        }
+        #message-title { font-size: 3rem; margin: 0; }
+        .wasted { color: #ff3333; font-family: 'Impact', sans-serif; letter-spacing: 2px; }
+        .busted { color: #3498db; font-family: 'Impact', sans-serif; letter-spacing: 2px; }
+        .victory { color: #2ecc71; font-family: 'Impact', sans-serif; letter-spacing: 2px; }
+
+    </style>
+</head>
+<body>
+
+    <h1>DIAMOND CITY RP</h1>
+    
+    <div class="hud">
+        <div class="dirty-money">ARGENT SALE: <span id="score">0</span> $</div>
+        <div class="wanted-level">WANTED: ★★★★★</div>
+    </div>
+
+    <div class="game-wrapper">
+        <div class="grid"></div>
+        <div id="message-box">
+            <h2 id="message-title" class="wasted">WASTED</h2>
+            <p style="color:white">Appuie sur F5 pour respawn</p>
+        </div>
+    </div>
+
+    <script>
+        const grid = document.querySelector('.grid');
+        const scoreDisplay = document.getElementById('score');
+        const msgBox = document.getElementById('message-box');
+        const msgTitle = document.getElementById('message-title');
+        
+        const width = 28;
+        let score = 0;
+        let squares = [];
+        let isGameOver = false;
+
+        // 0: Argent, 1: Immeuble, 2: Comico (spawn flics), 3: Diamant, 4: Route vide
+        const layout = [
+            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+            1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,
+            1,0,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,1,1,1,1,0,1,
+            1,3,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,1,1,1,1,3,1,
+            1,0,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,1,1,1,1,0,1,
+            1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+            1,0,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,0,1,
+            1,0,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,0,1,
+            1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,
+            1,1,1,1,1,1,0,1,1,1,1,1,4,1,1,4,1,1,1,1,1,0,1,1,1,1,1,1,
+            1,1,1,1,1,1,0,1,1,4,4,4,4,4,4,4,4,4,4,1,1,0,1,1,1,1,1,1,
+            1,1,1,1,1,1,0,1,1,4,1,1,2,2,2,2,1,1,4,1,1,0,1,1,1,1,1,1,
+            1,1,1,1,1,1,0,1,1,4,1,2,2,2,2,2,2,1,4,1,1,0,1,1,1,1,1,1,
+            4,4,4,4,4,4,0,0,0,4,1,2,2,2,2,2,2,1,4,0,0,0,4,4,4,4,4,4,
+            1,1,1,1,1,1,0,1,1,4,1,2,2,2,2,2,2,1,4,1,1,0,1,1,1,1,1,1,
+            1,1,1,1,1,1,0,1,1,4,1,1,1,1,1,1,1,1,4,1,1,0,1,1,1,1,1,1,
+            1,1,1,1,1,1,0,1,1,4,1,1,1,1,1,1,1,1,4,1,1,0,1,1,1,1,1,1,
+            1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,
+            1,0,1,1,1,1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,0,1,1,1,1,0,1,
+            1,3,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,3,1,
+            1,0,0,0,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,0,0,1,
+            1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,
+            1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,
+            1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,1,0,1,
+            1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,1,0,1,
+            1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+        ];
+
+        // --- GENERATION VILLE ---
+        function createBoard() {
+            for (let i = 0; i < layout.length; i++) {
+                const square = document.createElement('div');
+                grid.appendChild(square);
+                squares.push(square);
+
+                if (layout[i] === 0) square.classList.add('money-bag');
+                else if (layout[i] === 1) square.classList.add('wall');
+                else if (layout[i] === 2) square.classList.add('ghost-lair');
+                else if (layout[i] === 3) square.classList.add('diamond-power');
+                
+                // Route
+                if ([0,2,3,4].includes(layout[i])) square.classList.add('empty');
+            }
+        }
+        createBoard();
+
+        // --- JOUEUR (GO-FAST) ---
+        let playerIndex = 490;
+        let playerDir = 'right';
+        squares[playerIndex].classList.add('player', 'right');
+
+        function movePlayer(e) {
+            if (isGameOver) return;
+            squares[playerIndex].classList.remove('player', 'left', 'right', 'up', 'down');
+            
+            switch(e.key) {
+                case 'ArrowLeft': case 'q':
+                    if (playerIndex % width !== 0 && !squares[playerIndex - 1].classList.contains('wall')) { playerIndex -= 1; playerDir = 'left'; }
+                    if ((playerIndex % width === 0) && squares[playerIndex - 1 + width].classList.contains('empty')) playerIndex += width -1;
+                    break;
+                case 'ArrowRight': case 'd':
+                    if (playerIndex % width < width - 1 && !squares[playerIndex + 1].classList.contains('wall')) { playerIndex += 1; playerDir = 'right'; }
+                    if ((playerIndex % width === width -1) && squares[playerIndex + 1 - width].classList.contains('empty')) playerIndex -= width -1;
+                    break;
+                case 'ArrowUp': case 'z':
+                    if (playerIndex - width >= 0 && !squares[playerIndex - width].classList.contains('wall')) { playerIndex -= width; playerDir = 'up'; }
+                    break;
+                case 'ArrowDown': case 's':
+                    if (playerIndex + width < width * width && !squares[playerIndex + width].classList.contains('wall')) { playerIndex += width; playerDir = 'down'; }
+                    break;
+            }
+            
+            squares[playerIndex].classList.add('player', playerDir);
+            collectMoney();
+            collectDiamond();
+            checkCollision();
+            checkWin();
+        }
+        document.addEventListener('keydown', movePlayer);
+
+        function collectMoney() {
+            if (squares[playerIndex].classList.contains('money-bag')) {
+                score += 50;
+                scoreDisplay.innerHTML = score;
+                squares[playerIndex].classList.remove('money-bag');
+            }
+        }
+
+        function collectDiamond() {
+            if (squares[playerIndex].classList.contains('diamond-power')) {
+                score += 500;
+                scoreDisplay.innerHTML = score;
+                cops.forEach(cop => cop.isScared = true);
+                // Effet visuel : Les murs clignotent
+                document.querySelectorAll('.wall').forEach(w => w.style.borderColor = "red");
+                
+                setTimeout(() => {
+                    cops.forEach(cop => cop.isScared = false);
+                    document.querySelectorAll('.wall').forEach(w => w.style.borderColor = "#00ffff");
+                }, 10000); // 10 secondes de mode rage
+                
+                squares[playerIndex].classList.remove('diamond-power');
+            }
+        }
+
+        // --- POLICE (IA) ---
+        class Cop {
+            constructor(className, startIndex, speed) {
+                this.className = className;
+                this.startIndex = startIndex;
+                this.speed = speed;
+                this.currentIndex = startIndex;
+                this.isScared = false;
+                this.timerId = NaN;
+            }
+        }
+
+        // LSPD, Sheriff, FIB, NOOSE
+        let cops = [
+            new Cop('unit-1', 348, 250),
+            new Cop('unit-2', 376, 400),
+            new Cop('unit-3', 351, 300),
+            new Cop('unit-4', 379, 500)
+        ];
+
+        cops.forEach(cop => {
+            squares[cop.currentIndex].classList.add(cop.className, 'cop');
+        });
+
+        function moveCop(cop) {
+            const directions =  [-1, +1, width, -width];
+            let direction = directions[Math.floor(Math.random() * directions.length)];
+
+            cop.timerId = setInterval(function() {
+                if (isGameOver) return;
+
+                // Si pas mur et pas un autre flic
+                if  (!squares[cop.currentIndex + direction].classList.contains('wall') &&
+                    !squares[cop.currentIndex + direction].classList.contains('cop') ) {
+                    
+                    squares[cop.currentIndex].classList.remove(cop.className, 'cop', 'scared-cop');
+                    cop.currentIndex += direction;
+                    squares[cop.currentIndex].classList.add(cop.className, 'cop');
+                
+                } else {
+                    direction = directions[Math.floor(Math.random() * directions.length)];
+                }
+
+                // Gestion peur
+                if (cop.isScared) {
+                    squares[cop.currentIndex].classList.add('scared-cop');
+                }
+
+                // Collision pendant que le flic a peur (Le joueur casse la voiture de police)
+                if (cop.isScared && squares[cop.currentIndex].classList.contains('player')) {
+                    squares[cop.currentIndex].classList.remove(cop.className, 'cop', 'scared-cop');
+                    cop.currentIndex = cop.startIndex; // Respawn au comico
+                    score += 1000;
+                    scoreDisplay.innerHTML = score;
+                    squares[cop.currentIndex].classList.add(cop.className, 'cop');
+                    cop.isScared = false;
+                }
+                
+                checkCollision();
+
+            }, cop.speed);
+        }
+
+        cops.forEach(cop => moveCop(cop));
+
+        // --- COLLISION & FIN ---
+        function checkCollision() {
+            if (squares[playerIndex].classList.contains('cop') &&
+                !squares[playerIndex].classList.contains('scared-cop')) {
+                gameOver("BUSTED", "busted");
+            }
+        }
+
+        function checkWin() {
+            if (!squares.some(square => square.classList.contains('money-bag'))) {
+                gameOver("MISSION PASSED", "victory");
+            }
+        }
+
+        function gameOver(text, cssClass) {
+            isGameOver = true;
+            cops.forEach(cop => clearInterval(cop.timerId));
+            document.removeEventListener('keydown', movePlayer);
+            
+            msgTitle.innerText = text;
+            msgTitle.className = cssClass; // 'wasted', 'busted' ou 'victory'
+            msgBox.style.display = 'block';
+        }
+
+    </script>
+</body>
+</html>
